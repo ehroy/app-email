@@ -1,53 +1,41 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import axios from 'axios'
-import LoginView from '../views/Login.vue'
-import AdminView from '../views/Admin.vue'
+import Login from '@/views/Login.vue'
+import Admin from '@/views/Admin.vue'
+import axiosInstance from '@/api/axios'
+
+const routes = [
+  { path: '/', component: Login },
+  {
+    path: '/admin',
+    component: Admin,
+    meta: { requiresAuth: true }, // Tandai rute ini memerlukan autentikasi
+  },
+]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/login',
-      name: 'about',
-      component: LoginView,
-    },
-    {
-      path: '/',
-      name: 'home',
-      component: LoginView,
-    },
-    {
-      path: '/admin',
-      name: 'admin',
-      component: AdminView,
-      meta: { requiresAuth: true },
-    },
-  ],
+  history: createWebHistory(),
+  routes,
 })
+
 router.beforeEach(async (to, from, next) => {
   if (to.matched.some((record) => record.meta.requiresAuth)) {
-    const token = localStorage.getItem('token') // Ambil token dari localStorage
-    console.log(token)
-    try {
-      const response = await axios.post('http://localhost:3000/api/authenticate', {
-        email: email.value,
-        password: password.value,
-      })
-      localStorage.setItem('token', response.data.token) // Menyimpan token
-      router.push('/admin') // Arahkan ke halaman utama
-    } catch (error) {
-      console.log(error)
-      errorMessage.value = 'Login failed!'
-    }
+    const token = localStorage.getItem('token')
     if (!token) {
-      // Jika tidak ada token, redirect ke halaman login
-      return next('/')
+      return next('/') // Redirect jika token tidak ada
     }
-    // (Opsional) Periksa validitas token ke server
-    // Jika valid, lanjutkan
-    // Jika tidak valid, hapus token dan redirect
+
+    try {
+      // Validasi token dengan backend
+      await axiosInstance.post('/authenticate')
+      next() // Token valid, lanjutkan
+    } catch (error) {
+      console.error('Token invalid:', error)
+      localStorage.removeItem('token') // Hapus token jika invalid
+      next('/') // Redirect ke login
+    }
+  } else {
+    next() // Rute tidak memerlukan autentikasi
   }
-  next()
 })
 
 export default router

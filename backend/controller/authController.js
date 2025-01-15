@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import imaps from "imap-simple";
+import { log } from "../utils/log.js";
 dotenv.config();
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -137,39 +138,59 @@ export const tes = async (req, res) => {
   }
 };
 export const email = async (req, res) => {
-  const { email } = req.body;
-
   try {
-    if (!email) {
-      return res.status(400).send("not found search query");
+    const { email } = req.body;
+    console.log(email);
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token || !email) {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: No token provided" });
     }
-    const connection = await imaps.connect({
-      imap: {
-        password: "fgzhmcxyjzeaulji",
-        user: "rikayenasi109@gmail.com",
-        host: "imap.gmail.com",
-        port: 993,
-        authTimeout: 10000,
-        tls: true,
-        tlsOptions: { rejectUnauthorized: false },
-      },
+    await jwt.verify(token, process.env.KEY, async (err, userId) => {
+      if (err) {
+        return res.status(403).json({ message: "Forbidden: Invalid token" });
+      }
+      log("waiting get email ", "warning");
+
+      try {
+        const connection = await imaps.connect({
+          imap: {
+            password: process.env.PASSWORD,
+            user: process.env.EMAIL,
+            host: "imap.gmail.com",
+            port: 993,
+            authTimeout: 10000,
+            tls: true,
+            tlsOptions: { rejectUnauthorized: false },
+          },
+        });
+        const box = await connection.openBox("INBOX");
+        const searchCriteria = ["ALL", ["TO", email]];
+        const fetchOptions = {
+          bodies: ["HEADER", "TEXT"],
+          markSeen: false,
+        };
+        let results;
+        let validasiemailotp;
+        do {
+          results = await connection.search(searchCriteria, fetchOptions);
+          validasiemailotp = JSON.stringify(results);
+        } while (!validasiemailotp.includes("attributes"));
+        console.log(validasiemailotp);
+        res.json({
+          status: 200,
+          message: "success get all",
+          data: results,
+        });
+      } catch (error) {
+        return res.status(500).json({ message: "Terjadi kelemahan" });
+      }
     });
-    const box = await connection.openBox("INBOX");
-    const searchCriteria = ["ALL", ["TO", email]];
-    const fetchOptions = {
-      bodies: ["HEADER", "TEXT"],
-      markSeen: false,
-    };
-    let results;
-    let validasiemailotp;
-    do {
-      results = await connection.search(searchCriteria, fetchOptions);
-      validasiemailotp = JSON.stringify(results);
-    } while (!validasiemailotp.includes("attributes"));
-    res.json({ status: 200, message: "peler" });
   } catch (error) {
-    console.error(error);
-    res.status(500).send("Terjadi kesalahan");
+    return res.status(500).json({ message: "Terjadi kelemahan" });
   }
 };
 export default { login, tes, create, email };
