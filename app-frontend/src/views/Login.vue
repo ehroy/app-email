@@ -51,7 +51,7 @@ const login = async () => {
       email: email.value,
       password: password.value,
     })
-    console.log(response)
+    console.log(response.data)
     localStorage.setItem('token', response.data.token) // Simpan token ke localStorage
     router.push('/admin') // Redirect ke halaman admin
   } catch (error) {

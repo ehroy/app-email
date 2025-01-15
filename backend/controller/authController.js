@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import imaps from "imap-simple";
 import { log } from "../utils/log.js";
+import moment from "moment";
 dotenv.config();
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -140,57 +141,81 @@ export const tes = async (req, res) => {
 export const email = async (req, res) => {
   try {
     const { email } = req.body;
-    console.log(email);
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
 
-    if (!token || !email) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized: No token provided" });
-    }
-    await jwt.verify(token, process.env.KEY, async (err, userId) => {
-      if (err) {
-        return res.status(403).json({ message: "Forbidden: Invalid token" });
-      }
-      log("waiting get email ", "warning");
-
-      try {
-        const connection = await imaps.connect({
-          imap: {
-            password: process.env.PASSWORD,
-            user: process.env.EMAIL,
-            host: "imap.gmail.com",
-            port: 993,
-            authTimeout: 10000,
-            tls: true,
-            tlsOptions: { rejectUnauthorized: false },
-          },
-        });
-        const box = await connection.openBox("INBOX");
-        const searchCriteria = ["ALL", ["TO", email]];
-        const fetchOptions = {
-          bodies: ["HEADER", "TEXT"],
-          markSeen: false,
-        };
-        let results;
-        let validasiemailotp;
-        do {
-          results = await connection.search(searchCriteria, fetchOptions);
-          validasiemailotp = JSON.stringify(results);
-        } while (!validasiemailotp.includes("attributes"));
-        console.log(validasiemailotp);
-        res.json({
-          status: 200,
-          message: "success get all",
-          data: results,
-        });
-      } catch (error) {
-        return res.status(500).json({ message: "Terjadi kelemahan" });
-      }
+    const connection = await imaps.connect({
+      imap: {
+        password: process.env.PASSWORD,
+        user: process.env.EMAIL,
+        host: "imap.gmail.com",
+        port: 993,
+        authTimeout: 10000,
+        tls: true,
+        tlsOptions: { rejectUnauthorized: false },
+      },
     });
+
+    // Fungsi untuk mencari email
+    const searchEmails = async () => {
+      const box = await connection.openBox("HOUSEHOLD");
+      const sinceTime = moment().subtract(12, "hours").toDate();
+      const searchCriteria = [
+        "ALL",
+        ["TO", email],
+        ["SINCE", sinceTime.toISOString()],
+      ];
+      const fetchOptions = {
+        bodies: ["HEADER", "TEXT"],
+        markSeen: false,
+        struct: true,
+      };
+
+      // Cari email sesuai kriteria
+      const results = await connection.search(searchCriteria, fetchOptions);
+      if (results.length === 0) {
+        throw new Error("No emails found");
+      }
+
+      const formattedResults = results.map((message) => {
+        const headers = message.parts.find(
+          (part) => part.which === "HEADER"
+        ).body;
+        const textPart = message.parts.find((part) => part.which === "TEXT");
+
+        return {
+          subject: headers.subject?.[0] || "(No Subject)",
+          from: headers.from?.[0] || "(Unknown Sender)",
+          to: headers.to?.[0] || "(Unknown Sender)",
+          date: headers.date?.[0] || "(Unknown Date)",
+          text: textPart?.body || "(No Text Content)",
+        };
+      });
+
+      return formattedResults;
+    };
+
+    // Implementasi timeout dengan Promise.race
+    const timeout = new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Timeout: Email not found within 10 seconds")),
+        10000 // Timeout 10 detik
+      )
+    );
+
+    const results = await Promise.race([searchEmails(), timeout]);
+
+    // Kirimkan hasil jika tidak ada error
+    if (!res.headersSent) {
+      res.json({
+        status: 200,
+        message: "Success",
+        data: results,
+      });
+    }
   } catch (error) {
-    return res.status(500).json({ message: "Terjadi kelemahan" });
+    // Pastikan hanya mengirim respons satu kali
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message || "Terjadi kesalahan" });
+    }
   }
 };
 export default { login, tes, create, email };

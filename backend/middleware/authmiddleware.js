@@ -10,8 +10,8 @@ const authenticate = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.KEY);
-    console.log(decoded);
     next();
+    return res.status(200).send({ message: "token valid" });
   } catch (error) {
     res.status(401).send("Token tidak valid");
   }
